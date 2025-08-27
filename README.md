@@ -58,7 +58,6 @@ Then open [http://localhost:8501](http://localhost:8501) in your browser.
 ```
 mcq-generator/
 │── mcq_app.py              # Main Streamlit app
-│── mcq_from_pdf_min.py     # Minimal script version
 │── requirements.txt        # Dependencies
 │── README.md               # Project description + usage
 ```
