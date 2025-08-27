@@ -88,7 +88,3 @@ Example MCQs generated from a sample internship PDF:
 - ₹25,000/month  
 ✅ Answer: **₹15,000/month**  
 
----
-
-## 📜 License  
-MIT License – feel free to use and modify.  
