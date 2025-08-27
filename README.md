@@ -66,7 +66,8 @@ mcq-generator/
 ---
 
 ## 📸 Screenshots  
-*(Add screenshots of your app here, e.g., upload PDF, generated MCQs, download buttons)*  
+ 
+<img width="1903" height="809" alt="image" src="https://github.com/user-attachments/assets/ba20a2ec-3773-4ea4-a9f7-c3636ec7ec72" />
 
 ---
 
