@@ -73,6 +73,9 @@ mcq-generator/
 
 <img width="1688" height="944" alt="image" src="https://github.com/user-attachments/assets/cbc57777-af96-4e12-af42-37326b1a2313" />
 
+<img width="1348" height="529" alt="image" src="https://github.com/user-attachments/assets/3c687a9d-68e2-4cd3-a3d0-1d6a17884a58" />
+
+
 
 
 ---
