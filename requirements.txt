@@ -1,0 +1,8 @@
+streamlit
+pymupdf
+pinecone
+langchain
+langchain-core
+langchain-text-splitters
+langchain-pinecone
+langchain-ollama
