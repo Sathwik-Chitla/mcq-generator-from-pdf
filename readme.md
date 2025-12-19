@@ -88,8 +88,7 @@ rag-mcq-quiz-generator/
 │── requirements.txt       # Dependencies
 │── README.md              # Project description + usage
 
-📸 Screenshots
-<img width="1903" height="809" alt="image" src="https://github.com/user-attachments/assets/ba20a2ec-3773-4ea4-a9f7-c3636ec7ec72" /> <img width="1827" height="895" alt="image" src="https://github.com/user-attachments/assets/9830d110-8a7f-4046-8178-6fa3488b6c4e" /> <img width="1688" height="944" alt="image" src="https://github.com/user-attachments/assets/cbc57777-af96-4e12-af42-37326b1a2313" /> <img width="1348" height="529" alt="image" src="https://github.com/user-attachments/assets/3c687a9d-68e2-4cd3-a3d0-1d6a17884a58" />
+
 🎯 Demo
 
 Example MCQs generated from an uploaded ML PDF:
@@ -114,4 +113,5 @@ MAP incorporates prior probability
 MAP minimizes likelihood
 
 MAP is unsupervised
+
 ✅ Answer: MAP incorporates prior probability
