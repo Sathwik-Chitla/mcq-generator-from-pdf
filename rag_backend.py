@@ -4,7 +4,7 @@ import json
 import fitz
 
 from pinecone import Pinecone
-from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import PromptTemplate
@@ -15,69 +15,51 @@ from langchain_core.output_parsers import StrOutputParser
 # CONFIG
 # =========================================================
 INDEX_NAME = "rag-pdf-index"
-EMBED_MODEL = "nomic-embed-text"
-OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+EMBED_DIM = 1536  # OpenAI embeddings
 
 
 # =========================================================
 # DIFFICULTY RULES
 # =========================================================
 DIFF_RULES = {
-    "Easy": """
-Generate EASY questions.
-Focus only on definitions and explicitly stated facts.
-Avoid reasoning or application.
-""",
-    "Medium": """
-Generate MEDIUM questions.
-Test understanding, intuition, or comparisons.
-No multi-step reasoning.
-""",
+    "Easy": "Generate simple definition-based questions.",
+    "Medium": "Generate understanding or comparison-based questions.",
     "Hard": """
 Generate HARD questions.
-Test application, assumptions, or implications.
-Only use what is clearly inferable from the material.
+- Combine at least TWO facts from the material
+- Use comparisons or implications
+- No external knowledge
 """
 }
 
 
 # =========================================================
-# PROMPT (BALANCED & HALLUCINATION-RESISTANT)
+# PROMPT
 # =========================================================
 PROMPT = PromptTemplate(
     input_variables=["context", "num_q", "difficulty"],
     template="""
-You are an expert instructor designing assessment-quality MCQs.
+You are an expert instructor creating assessment-quality MCQs.
 
-DIFFICULTY INSTRUCTIONS:
+DIFFICULTY:
 {difficulty}
 
-TASK:
-Generate up to {num_q} MCQs strictly from the study material below.
+Generate up to {num_q} MCQs strictly from the study material.
 
-MANDATORY QUESTION RULES:
-1. Each question must test ONE clear concept explicitly present in the material.
-2. The correct answer must be directly supported by the material.
-3. At least TWO incorrect options must be plausible misconceptions.
-4. If the material does not support all questions, generate FEWER valid questions.
+Rules:
+- Correct answer must be supported by the text
+- Wrong options must be plausible misconceptions
+- If insufficient info exists, generate fewer questions
 
-MANDATORY EXPLANATION STRUCTURE:
-- Sentence 1: Restate the relevant information from the study material.
-- Sentence 2: Explain why the correct option follows from this information.
-- Sentence 3: Explain why one incorrect option contradicts or misuses the material.
+Output ONLY valid JSON.
 
-STRICT OUTPUT RULES:
-- Output ONLY valid JSON.
-- No markdown, no commentary, no extra text.
-- Do NOT invent facts.
-
-JSON FORMAT:
+Format:
 [
   {{
-    "question": "Question text",
+    "question": "...",
     "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
     "answer": "A",
-    "explanation": "Structured explanation as required"
+    "explanation": "Explain using the material"
   }}
 ]
 
@@ -88,15 +70,29 @@ STUDY MATERIAL:
 
 
 # =========================================================
-# PDF LOADING
+# PDF LOADING (CLOUD SAFE)
 # =========================================================
 def load_pdf(file):
     doc = fitz.open(stream=file.read(), filetype="pdf")
-    return " ".join(page.get_text() for page in doc)
+    text = []
+
+    for page in doc:
+        blocks = page.get_text("blocks")
+        for b in blocks:
+            content = b[4].strip()
+            if not content:
+                continue
+
+            if content.count("  ") >= 2 or "\t" in content:
+                text.append("Table Fact: " + re.sub(r"\s+", " ", content))
+            else:
+                text.append(content)
+
+    return "\n".join(text)
 
 
 # =========================================================
-# INGEST PDF INTO PINECONE
+# INGEST INTO PINECONE
 # =========================================================
 def ingest_pdf_to_pinecone(text):
     splitter = RecursiveCharacterTextSplitter(
@@ -105,13 +101,16 @@ def ingest_pdf_to_pinecone(text):
     )
     chunks = splitter.split_text(text)
 
-    pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-    index = pc.Index(INDEX_NAME)
+    embeddings = OpenAIEmbeddings()
 
-    embeddings = OllamaEmbeddings(
-        model=EMBED_MODEL,
-        base_url=OLLAMA_BASE_URL
-    )
+    pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+
+    if INDEX_NAME not in [i["name"] for i in pc.list_indexes()]:
+        pc.create_index(
+            name=INDEX_NAME,
+            dimension=EMBED_DIM,
+            metric="cosine"
+        )
 
     PineconeVectorStore.from_texts(
         texts=chunks,
@@ -121,83 +120,50 @@ def ingest_pdf_to_pinecone(text):
 
 
 # =========================================================
-# RAG RETRIEVAL (ROBUST & SAFE)
+# RETRIEVAL
 # =========================================================
-def retrieve_context(topic, k_retrieve=5, k_use=2):
-    retrieval_query = f"""
-{topic}
-Use exact terminology from the study material.
-Focus on definitions, assumptions, and explanations.
-"""
-
+def retrieve_context(topic, k=6):
+    embeddings = OpenAIEmbeddings()
     pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-    index = pc.Index(INDEX_NAME)
-
-    embeddings = OllamaEmbeddings(
-        model=EMBED_MODEL,
-        base_url=OLLAMA_BASE_URL
-    )
 
     store = PineconeVectorStore(
-        index=index,
+        index=pc.Index(INDEX_NAME),
         embedding=embeddings,
         text_key="text"
     )
 
-    docs = store.similarity_search(retrieval_query, k=k_retrieve)
-
-    # Primary context
-    context = "\n\n".join(d.page_content for d in docs[:k_use])
-
-    # Safety net: ensure sufficient context
-    if len(context.strip()) < 300:
-        context = "\n\n".join(d.page_content for d in docs[:3])
-
-    return context
+    docs = store.similarity_search(topic, k=k)
+    return "\n\n".join(d.page_content for d in docs[:4])
 
 
 # =========================================================
-# MCQ GENERATION (SAFE + SALVAGE)
+# MCQ GENERATION
 # =========================================================
 def generate_mcqs(query, difficulty, num_q):
     context = retrieve_context(query)
 
-    llm = ChatOllama(
-        model="llama3.1",
-        temperature=0,
-        base_url=OLLAMA_BASE_URL,
-        system="""
-You are a strict JSON generator.
-Only use information from the provided study material.
-"""
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0
     )
 
     chain = PROMPT | llm | StrOutputParser()
 
-    raw_output = chain.invoke({
+    raw = chain.invoke({
         "context": context,
         "num_q": num_q,
         "difficulty": DIFF_RULES[difficulty]
     })
 
-    # -----------------------------------------------------
-    # Salvage valid MCQs even if output is partially broken
-    # -----------------------------------------------------
-    objects = re.findall(r"\{[^{}]*\}", raw_output, re.DOTALL)
+    objects = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
     mcqs = []
 
-    for obj in objects:
+    for o in objects:
         try:
-            mcq = json.loads(obj)
-            if (
-                isinstance(mcq, dict)
-                and {"question", "options", "answer", "explanation"}.issubset(mcq)
-                and isinstance(mcq["options"], list)
-                and len(mcq["options"]) == 4
-                and mcq["answer"] in ["A", "B", "C", "D"]
-            ):
+            mcq = json.loads(o)
+            if {"question", "options", "answer", "explanation"}.issubset(mcq):
                 mcqs.append(mcq)
-        except json.JSONDecodeError:
-            continue
+        except:
+            pass
 
     return mcqs
