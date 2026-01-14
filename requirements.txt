@@ -1,6 +1,6 @@
 streamlit
 pymupdf
-pinecone-client
+pinecone
 langchain
 langchain-core
 langchain-text-splitters
