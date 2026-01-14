@@ -1,21 +1,12 @@
-import os
 import re
 import json
 import fitz
 
-from pinecone import Pinecone
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-
-
-# =========================================================
-# CONFIG
-# =========================================================
-INDEX_NAME = "rag-pdf-index"
-EMBED_DIM = 1536  # OpenAI embeddings
+from langchain_community.vectorstores import FAISS
 
 
 # =========================================================
@@ -70,7 +61,7 @@ STUDY MATERIAL:
 
 
 # =========================================================
-# PDF LOADING (CLOUD SAFE)
+# PDF LOADING
 # =========================================================
 def load_pdf(file):
     doc = fitz.open(stream=file.read(), filetype="pdf")
@@ -92,7 +83,7 @@ def load_pdf(file):
 
 
 # =========================================================
-# INGEST INTO PINECONE
+# INGEST (FAISS)
 # =========================================================
 def ingest_pdf_to_pinecone(text):
     splitter = RecursiveCharacterTextSplitter(
@@ -102,45 +93,18 @@ def ingest_pdf_to_pinecone(text):
     chunks = splitter.split_text(text)
 
     embeddings = OpenAIEmbeddings()
+    vectorstore = FAISS.from_texts(chunks, embedding=embeddings)
 
-    pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-
-    if INDEX_NAME not in [i["name"] for i in pc.list_indexes()]:
-        pc.create_index(
-            name=INDEX_NAME,
-            dimension=EMBED_DIM,
-            metric="cosine"
-        )
-
-    PineconeVectorStore.from_texts(
-        texts=chunks,
-        embedding=embeddings,
-        index_name=INDEX_NAME
-    )
-
-
-# =========================================================
-# RETRIEVAL
-# =========================================================
-def retrieve_context(topic, k=6):
-    embeddings = OpenAIEmbeddings()
-    pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-
-    store = PineconeVectorStore(
-        index=pc.Index(INDEX_NAME),
-        embedding=embeddings,
-        text_key="text"
-    )
-
-    docs = store.similarity_search(topic, k=k)
-    return "\n\n".join(d.page_content for d in docs[:4])
+    return vectorstore
 
 
 # =========================================================
 # MCQ GENERATION
 # =========================================================
 def generate_mcqs(query, difficulty, num_q):
-    context = retrieve_context(query)
+    # vectorstore is rebuilt per upload (fine for demo)
+    context_docs = st.session_state.vectorstore.similarity_search(query, k=4)
+    context = "\n\n".join(d.page_content for d in context_docs)
 
     llm = ChatOpenAI(
         model="gpt-4o-mini",
