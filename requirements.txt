@@ -1,8 +1,14 @@
 streamlit
 pymupdf
-pinecone
-langchain
-langchain-core
-langchain-text-splitters
-langchain-pinecone
-langchain-openai
+
+# Pinecone (new SDK, no plugins)
+pinecone>=3.0.0
+
+# LangChain (compatible versions)
+langchain>=0.1.16
+langchain-core>=0.1.46
+langchain-text-splitters>=0.0.1
+langchain-openai>=0.1.6
+
+# IMPORTANT: pin this to a SAFE version
+langchain-pinecone>=0.1.1
