@@ -1,8 +1,8 @@
 streamlit
 pymupdf
-pinecone
+pinecone-client
 langchain
 langchain-core
 langchain-text-splitters
 langchain-pinecone
-langchain-ollama
+langchain-openai
