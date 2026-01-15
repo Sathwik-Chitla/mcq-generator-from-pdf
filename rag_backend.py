@@ -1,14 +1,25 @@
+import os
 import re
 import json
 import fitz
 import streamlit as st
 
+from huggingface_hub import InferenceClient
+from sklearn.metrics.pairwise import cosine_similarity
+
 from langchain_groq import ChatGroq
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+
+
+# =========================================================
+# API CLIENTS
+# =========================================================
+HF_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
+hf_client = InferenceClient(
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    token=HF_TOKEN
+)
 
 
 # =========================================================
@@ -67,7 +78,7 @@ STUDY MATERIAL:
 # =========================================================
 def load_pdf(file):
     doc = fitz.open(stream=file.read(), filetype="pdf")
-    text = []
+    chunks = []
 
     for page in doc:
         blocks = page.get_text("blocks")
@@ -77,37 +88,48 @@ def load_pdf(file):
                 continue
 
             if content.count("  ") >= 2 or "\t" in content:
-                text.append("Table Fact: " + re.sub(r"\s+", " ", content))
+                chunks.append("Table Fact: " + re.sub(r"\s+", " ", content))
             else:
-                text.append(content)
+                chunks.append(content)
 
-    return "\n".join(text)
+    return chunks
 
 
 # =========================================================
-# INGEST (FAISS)
+# EMBEDDINGS (HUGGINGFACE API)
 # =========================================================
-def ingest_pdf_to_pinecone(text):
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=120
-    )
-    chunks = splitter.split_text(text)
+def embed_texts(texts):
+    # HF API supports batch embeddings
+    embeddings = hf_client.embeddings(texts)
+    return [e["embedding"] for e in embeddings]
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
 
-    vectorstore = FAISS.from_texts(chunks, embedding=embeddings)
-    st.session_state.vectorstore = vectorstore
+# =========================================================
+# INGEST (IN-MEMORY)
+# =========================================================
+def ingest_pdf_to_pinecone(chunks):
+    vectors = embed_texts(chunks)
+
+    st.session_state.chunks = chunks
+    st.session_state.vectors = vectors
+
+
+# =========================================================
+# RETRIEVE CONTEXT
+# =========================================================
+def retrieve_context(query, k=4):
+    query_vec = embed_texts([query])[0]
+    sims = cosine_similarity([query_vec], st.session_state.vectors)[0]
+
+    top_idx = sims.argsort()[-k:][::-1]
+    return "\n\n".join(st.session_state.chunks[i] for i in top_idx)
 
 
 # =========================================================
 # MCQ GENERATION
 # =========================================================
 def generate_mcqs(query, difficulty, num_q):
-    docs = st.session_state.vectorstore.similarity_search(query, k=4)
-    context = "\n\n".join(d.page_content for d in docs)
+    context = retrieve_context(query)
 
     llm = ChatGroq(
         model="llama3-70b-8192",
