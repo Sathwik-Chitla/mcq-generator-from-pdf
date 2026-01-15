@@ -1,117 +1,135 @@
-📘 PDF → RAG-Based MCQ Generator
+# 📘 PDF to MCQ Generator using RAG
 
-A Streamlit web app that generates difficulty-aware Multiple Choice Questions (MCQs) strictly from an uploaded PDF using Retrieval-Augmented Generation (RAG) powered by LangChain + Pinecone + Ollama (LLaMA 3.1).
+A **Retrieval Augmented Generation (RAG)**–based web application that generates **topic-specific, difficulty-aware multiple-choice questions (MCQs)** from user-uploaded PDF documents.  
+Built with **Streamlit**, **LangChain**, **Groq LLaMA-3.1**, and **Hugging Face sentence embeddings**, the system ensures questions are grounded strictly in the source document, minimizing hallucinations.
 
-🚀 Features
+🔗 **Live Demo:**  
+👉 https://mcq-generator-from-pdf-2.streamlit.app/
 
-Upload any PDF and extract text automatically
+---
 
-Generate difficulty-aware MCQs (Easy / Medium / Hard)
+## 🚀 Features
 
-Generate a customizable number of MCQs (1–10)
+- 📄 Upload any PDF and generate MCQs directly from its content  
+- 🎯 Topic-conditioned question generation  
+- 🧠 Difficulty levels: **Easy / Medium / Hard** (with real cognitive differences)  
+- 🔍 Retrieval Augmented Generation (RAG) to ground questions in source text  
+- 🧪 Semantic similarity search using Hugging Face embeddings  
+- ✅ Automated scoring with detailed explanations  
+- 🔁 Session-safe handling to prevent question repetition across documents  
+- ⚡ Low-latency, real-time interaction  
+- ☁️ Fully deployed on Streamlit Community Cloud  
 
-Interactive quiz interface with score calculation
+---
 
-Detailed explanations for every question
+## 🏗️ System Architecture
 
-Questions generated only from PDF content (RAG)
+PDF Upload
 
-Powered by Ollama (LLaMA-3.1) + Pinecone + LangChain
+↓
 
-⚙️ Installation
+PyMuPDF (Text Extraction)
 
-Clone this repository
+↓
 
-git clone https://github.com/your-username/rag-mcq-quiz-generator.git
-cd rag-mcq-quiz-generator
+Chunking & Embedding (Hugging Face)
+
+↓
+
+Similarity Search (Cosine Similarity)
+
+↓
+
+Relevant Context
+
+↓
+
+Groq LLaMA-3.1
+
+↓
+
+MCQs + Explanations
 
 
-Create a virtual environment (optional but recommended)
 
-python -m venv .venv
-.venv\Scripts\activate   # On Windows
-source .venv/bin/activate  # On Mac/Linux
+---
 
+## 🧠 Tech Stack
 
-Install dependencies
+- **Frontend:** Streamlit  
+- **LLM:** Groq `llama-3.1-8b-instant`  
+- **Embeddings:** Hugging Face Sentence Transformers  
+- **RAG Framework:** LangChain  
+- **PDF Parsing:** PyMuPDF  
+- **Similarity Search:** Cosine Similarity (scikit-learn)  
+- **Deployment:** Streamlit Community Cloud  
 
+---
+
+## ⚙️ Setup & Installation (Local)
+
+### 1️⃣ Clone the repository
+```bash
+git clone https://github.com/your-username/mcq-generator-from-pdf.git
+cd mcq-generator-from-pdf
+```
+### 2️⃣ Install dependencies
+```bash
 pip install -r requirements.txt
+```
+### 3️⃣ Set environment variables
+```bash
+export HUGGINGFACE_API_TOKEN=hf_xxxxxxxxxxxxxxxxx
+export GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxx
+```
 
-
-Install & run Ollama
-
-Download Ollama: https://ollama.ai
-
-Pull required models:
-
-ollama pull llama3.1
-ollama pull nomic-embed-text
-
-
-Start the Ollama server:
-
-ollama serve
-
-
-Configure Pinecone
-
-Set your Pinecone API key
-
-Windows (PowerShell)
-
-setx PINECONE_API_KEY "your_pinecone_api_key"
-
-
-Mac / Linux
-
-export PINECONE_API_KEY=your_pinecone_api_key
-
-
-Ensure a Pinecone index exists with the name:
-
-rag-pdf-index
-
-▶️ Usage
-
-Run the Streamlit app:
-
+### 4️⃣ Run the app
+```bash
 streamlit run app.py
+```
+### 📌 Difficulty Design
+
+Difficulty	                                                
+- Easy:                                                 Definition-based, directly stated facts
+- Medium:                                          Conceptual understanding and comparisons
+- Hard:                                               Application-based questions combining multiple facts
+
+### 🧪 Example Workflow
+
+- Upload lecture notes or textbook PDF
+
+- Enter a topic (e.g., Bayes Theorem)
+
+- Select difficulty and number of questions
+
+- Attempt the quiz
+
+- Review score and explanations
+
+### 🎯 Why RAG?
+
+- Prevents hallucinations
+ 
+- Ensures questions are derived only from the document
+
+- Improves trustworthiness and assessment quality
+
+### 📎 Live Demo
+```bash
+https://mcq-generator-from-pdf-2.streamlit.app/
+```
+
+📈 Future Improvements
+
+- Per-question source citations
+
+- Question diversity scoring
+
+- Support for figures
+
+- Export quiz as PDF / JSON
+
+- User authentication and quiz history
 
 
-Then open http://localhost:8501
- in your browser.
 
-📂 Project Structure
-rag-mcq-quiz-generator/
-│── app.py                 # Streamlit frontend
-│── rag_backend.py         # RAG pipeline + Pinecone + LLM logic
-│── requirements.txt       # Dependencies
-│── README.md              # Project description + usage
-
-
-🎯 Demo
-
-Example MCQs generated from an uploaded ML PDF:
-
-Q1. What does Maximum Likelihood Estimation (MLE) aim to maximize?
-
-Prior probability of parameters
-
-Likelihood of observed data
-
-Posterior distribution
-
-Regularization term
-✅ Answer: Likelihood of observed data
-
-Q2. How does MAP differ from MLE?
-
-MAP ignores prior information
-
-MAP incorporates prior probability
-
-MAP minimizes likelihood
-
-MAP is unsupervised
-
-✅ Answer: MAP incorporates prior probability
