@@ -1,177 +1,164 @@
-import os
-import re
-import json
-import fitz
 import streamlit as st
-
-from huggingface_hub import InferenceClient
-from sklearn.metrics.pairwise import cosine_similarity
-
-from langchain_groq import ChatGroq
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+import hashlib
+from rag_backend import load_pdf, ingest_pdf, generate_mcqs
 
 
-# =========================================================
-# HuggingFace Inference Client (FREE embeddings)
-# =========================================================
-HF_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
+# --------------------------------------------------
+# Helpers
+# --------------------------------------------------
+def get_pdf_hash(file):
+    file.seek(0)
+    data = file.read()
+    file.seek(0)
+    return hashlib.md5(data).hexdigest()
 
-hf_client = InferenceClient(
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    token=HF_TOKEN
+
+# --------------------------------------------------
+# Page Config
+# --------------------------------------------------
+st.set_page_config(
+    page_title="RAG MCQ Quiz Generator",
+    page_icon="📘",
+    layout="wide"
 )
 
-
-# =========================================================
-# DIFFICULTY RULES
-# =========================================================
-DIFF_RULES = {
-    "Easy": "Generate simple definition-based questions.",
-    "Medium": "Generate understanding or comparison-based questions.",
-    "Hard": """
-Generate HARD questions.
-- Combine at least TWO facts from the material
-- Use comparisons or implications
-- No external knowledge
-"""
-}
+st.title("📘 RAG-Based MCQ Quiz Generator")
+st.caption("Difficulty-aware MCQs using RAG + HuggingFace Embeddings + Groq (Free APIs)")
 
 
-# =========================================================
-# PROMPT
-# =========================================================
-PROMPT = PromptTemplate(
-    input_variables=["context", "num_q", "difficulty"],
-    template="""
-You are an expert instructor creating assessment-quality MCQs.
+# --------------------------------------------------
+# Sidebar
+# --------------------------------------------------
+with st.sidebar:
+    st.header("⚙️ Quiz Settings")
 
-DIFFICULTY:
-{difficulty}
+    pdf = st.file_uploader("Upload PDF", type="pdf")
 
-Generate up to {num_q} MCQs strictly from the study material.
+    topic = st.text_input(
+        "Enter topic / concept",
+        placeholder="e.g. MLE vs MAP"
+    )
 
-Rules:
-- Correct answer must be supported by the text
-- Wrong options must be plausible misconceptions
-- If insufficient info exists, generate fewer questions
+    difficulty = st.selectbox(
+        "Select difficulty",
+        ["Easy", "Medium", "Hard"]
+    )
 
-Output ONLY valid JSON.
+    num_q = st.slider("Number of questions", 1, 10, 5)
 
-Format:
-[
-  {{
-    "question": "...",
-    "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
-    "answer": "A",
-    "explanation": "Explain using the material"
-  }}
-]
-
-STUDY MATERIAL:
-{context}
-"""
-)
+    generate_btn = st.button("🚀 Generate Quiz")
 
 
-# =========================================================
-# PDF LOADING
-# =========================================================
-def load_pdf(file):
-    doc = fitz.open(stream=file.read(), filetype="pdf")
-    chunks = []
+# --------------------------------------------------
+# Session State
+# --------------------------------------------------
+if "pdf_hash" not in st.session_state:
+    st.session_state.pdf_hash = None
 
-    for page in doc:
-        blocks = page.get_text("blocks")
-        for b in blocks:
-            content = b[4].strip()
-            if not content:
-                continue
+if "vector_ready" not in st.session_state:
+    st.session_state.vector_ready = False
 
-            # Heuristic table handling
-            if content.count("  ") >= 2 or "\t" in content:
-                chunks.append("Table Fact: " + re.sub(r"\s+", " ", content))
-            else:
-                chunks.append(content)
+if "mcqs" not in st.session_state:
+    st.session_state.mcqs = []
 
-    return chunks
+if "answers" not in st.session_state:
+    st.session_state.answers = {}
+
+if "submitted" not in st.session_state:
+    st.session_state.submitted = False
 
 
-# =========================================================
-# EMBEDDINGS (CORRECT HF API USAGE)
-# =========================================================
-def embed_texts(texts):
-    """
-    Generate embeddings using HuggingFace Inference API.
-    HF does NOT support batch embeddings reliably on free tier,
-    so we embed one-by-one for stability.
-    """
-    vectors = []
-    for text in texts:
-        vec = hf_client.feature_extraction(text)
-        vectors.append(vec)
-    return vectors
+# --------------------------------------------------
+# Generate Quiz
+# --------------------------------------------------
+if generate_btn:
+    if not pdf:
+        st.warning("Please upload a PDF.")
+    elif not topic.strip():
+        st.warning("Please enter a topic.")
+    else:
+        current_hash = get_pdf_hash(pdf)
+
+        # 🔥 NEW PDF → RESET STATE
+        if st.session_state.pdf_hash != current_hash:
+            st.session_state.pdf_hash = current_hash
+            st.session_state.vector_ready = False
+            st.session_state.mcqs = []
+            st.session_state.answers = {}
+            st.session_state.submitted = False
+
+            for k in ["chunks", "vectors"]:
+                if k in st.session_state:
+                    del st.session_state[k]
+
+        if not st.session_state.vector_ready:
+            with st.spinner("Processing PDF and building knowledge base..."):
+                chunks = load_pdf(pdf)
+                ingest_pdf(chunks)
+                st.session_state.vector_ready = True
+
+        with st.spinner("Generating MCQs..."):
+            mcqs = generate_mcqs(
+                query=topic,
+                difficulty=difficulty,
+                num_q=num_q
+            )
+
+        if mcqs:
+            st.session_state.mcqs = mcqs
+            st.session_state.answers = {i: None for i in range(len(mcqs))}
+            st.session_state.submitted = False
+            st.success("Quiz generated successfully!")
+        else:
+            st.error("No valid questions could be generated from this document.")
 
 
-# =========================================================
-# INGEST (IN-MEMORY)
-# =========================================================
-def ingest_pdf_to_pinecone(chunks):
-    vectors = embed_texts(chunks)
+# --------------------------------------------------
+# Quiz UI
+# --------------------------------------------------
+if st.session_state.mcqs and not st.session_state.submitted:
+    st.header("📝 Quiz")
 
-    st.session_state.chunks = chunks
-    st.session_state.vectors = vectors
+    for i, q in enumerate(st.session_state.mcqs):
+        st.markdown(f"### Q{i+1}. {q['question']}")
+
+        choice = st.radio(
+            "Choose an option:",
+            q["options"],
+            index=None,
+            key=f"q_{i}"
+        )
+
+        st.session_state.answers[i] = choice
+        st.divider()
+
+    if all(v is not None for v in st.session_state.answers.values()):
+        st.button("✅ Submit Answers",
+                  on_click=lambda: st.session_state.update({"submitted": True}))
 
 
-# =========================================================
-# RETRIEVE CONTEXT
-# =========================================================
-def retrieve_context(query, k=4):
-    query_vec = embed_texts([query])[0]
+# --------------------------------------------------
+# Results
+# --------------------------------------------------
+if st.session_state.submitted:
+    st.header("📊 Results")
+    score = 0
 
-    sims = cosine_similarity(
-        [query_vec],
-        st.session_state.vectors
-    )[0]
+    for i, q in enumerate(st.session_state.mcqs):
+        user_choice = st.session_state.answers[i]
+        correct = next(o for o in q["options"] if o.startswith(q["answer"]))
 
-    top_idx = sims.argsort()[-k:][::-1]
-    return "\n\n".join(st.session_state.chunks[i] for i in top_idx)
+        st.markdown(f"### Q{i+1}. {q['question']}")
+        st.write(f"🧑 Your answer: {user_choice}")
+        st.write(f"✅ Correct answer: {correct}")
 
+        if user_choice == correct:
+            st.success("Correct")
+            score += 1
+        else:
+            st.error("Wrong")
 
-# =========================================================
-# MCQ GENERATION
-# =========================================================
-def generate_mcqs(query, difficulty, num_q):
-    context = retrieve_context(query)
+        st.info(f"📘 Explanation: {q['explanation']}")
+        st.divider()
 
-    llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0
-)
-    chain = PROMPT | llm | StrOutputParser()
-
-    raw = chain.invoke({
-        "context": context,
-        "num_q": num_q,
-        "difficulty": DIFF_RULES[difficulty]
-    })
-
-    # Salvage valid JSON objects only
-    objects = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
-    mcqs = []
-
-    for obj in objects:
-        try:
-            mcq = json.loads(obj)
-            if (
-                {"question", "options", "answer", "explanation"}
-                .issubset(mcq)
-                and len(mcq["options"]) == 4
-                and mcq["answer"] in ["A", "B", "C", "D"]
-            ):
-                mcqs.append(mcq)
-        except json.JSONDecodeError:
-            continue
-
-    return mcqs
-
+    st.subheader(f"🎯 Final Score: {score} / {len(st.session_state.mcqs)}")
