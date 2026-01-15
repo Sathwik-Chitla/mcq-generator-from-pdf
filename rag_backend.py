@@ -13,7 +13,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 
 # =========================================================
-# HF Embeddings Client
+# HuggingFace Embedding Client
 # =========================================================
 hf_client = InferenceClient(
     model="sentence-transformers/all-MiniLM-L6-v2",
@@ -22,30 +22,30 @@ hf_client = InferenceClient(
 
 
 # =========================================================
-# Difficulty Control (REAL DIFFERENCES)
+# Difficulty Configuration (REAL EFFECT)
 # =========================================================
 DIFFICULTY_CONFIG = {
     "Easy": {
         "retrieval_k": 2,
         "instruction": """
-Ask factual, definition-based questions.
-Answers must be explicitly stated.
-Avoid comparisons or reasoning.
+Ask definition-based or direct factual questions.
+Answers must be explicitly stated in one place.
+Avoid reasoning or comparisons.
 """
     },
     "Medium": {
         "retrieval_k": 4,
         "instruction": """
 Ask conceptual or comparison-based questions.
-Test understanding, not recall.
-No multi-step reasoning.
+Test understanding across nearby statements.
+Avoid multi-step reasoning.
 """
     },
     "Hard": {
         "retrieval_k": 6,
         "instruction": """
 Ask application or implication-based questions.
-Require combining multiple facts.
+Each question must combine at least TWO facts.
 Avoid surface-level recall.
 """
     }
@@ -53,7 +53,7 @@ Avoid surface-level recall.
 
 
 # =========================================================
-# Prompt
+# Prompt (ENFORCES QUESTION COUNT)
 # =========================================================
 PROMPT = PromptTemplate(
     input_variables=["context", "num_q", "difficulty_instruction"],
@@ -63,11 +63,15 @@ You are an expert instructor creating assessment-quality MCQs.
 DIFFICULTY RULES:
 {difficulty_instruction}
 
+TASK:
+Generate EXACTLY {num_q} UNIQUE MCQs from the study material below.
+If fewer than {num_q} are possible, generate as many as you can.
+
 STRICT RULES:
 - Use ONLY the study material
+- Each question must test a DIFFERENT concept
 - Do NOT repeat questions
-- Do NOT ask trivial questions
-- Generate fewer questions if needed
+- Do NOT invent facts
 
 OUTPUT ONLY JSON:
 [
@@ -95,22 +99,26 @@ def load_pdf(file):
     for page in doc:
         blocks = page.get_text("blocks")
         for b in blocks:
-            txt = b[4].strip()
-            if txt:
-                chunks.append(re.sub(r"\s+", " ", txt))
+            text = b[4].strip()
+            if text:
+                chunks.append(re.sub(r"\s+", " ", text))
 
     return chunks
 
 
 # =========================================================
-# Embeddings
+# Embeddings (HF Inference API)
 # =========================================================
 def embed_texts(texts):
-    return [hf_client.feature_extraction(t) for t in texts]
+    vectors = []
+    for text in texts:
+        vec = hf_client.feature_extraction(text)
+        vectors.append(vec)
+    return vectors
 
 
 # =========================================================
-# Ingest
+# Ingest PDF (RESET-SAFE)
 # =========================================================
 def ingest_pdf(chunks):
     st.session_state.chunks = chunks
@@ -122,40 +130,65 @@ def ingest_pdf(chunks):
 # =========================================================
 def retrieve_context(query, k):
     q_vec = embed_texts([query])[0]
-    sims = cosine_similarity([q_vec], st.session_state.vectors)[0]
+
+    sims = cosine_similarity(
+        [q_vec],
+        st.session_state.vectors
+    )[0]
+
     top_idx = sims.argsort()[-k:][::-1]
     return "\n\n".join(st.session_state.chunks[i] for i in top_idx)
 
 
 # =========================================================
-# MCQ Generation
+# MCQ Generation (RESPECTS num_q)
 # =========================================================
 def generate_mcqs(query, difficulty, num_q):
     cfg = DIFFICULTY_CONFIG[difficulty]
-    context = retrieve_context(query, cfg["retrieval_k"])
 
     llm = ChatGroq(
         model="llama-3.1-8b-instant",
         temperature=0
     )
 
-    chain = PROMPT | llm | StrOutputParser()
+    all_mcqs = []
+    attempts = 0
+    max_attempts = 3  # prevents infinite loops
 
-    raw = chain.invoke({
-        "context": context,
-        "num_q": num_q,
-        "difficulty_instruction": cfg["instruction"]
-    })
+    while len(all_mcqs) < num_q and attempts < max_attempts:
+        attempts += 1
 
-    objects = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
-    mcqs = []
+        context = retrieve_context(query, cfg["retrieval_k"])
 
-    for o in objects:
-        try:
-            mcq = json.loads(o)
-            if {"question", "options", "answer", "explanation"}.issubset(mcq):
-                mcqs.append(mcq)
-        except:
-            pass
+        chain = PROMPT | llm | StrOutputParser()
 
-    return mcqs
+        raw = chain.invoke({
+            "context": context,
+            "num_q": num_q - len(all_mcqs),
+            "difficulty_instruction": cfg["instruction"]
+        })
+
+        objects = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
+
+        for obj in objects:
+            try:
+                mcq = json.loads(obj)
+                if (
+                    {"question", "options", "answer", "explanation"}
+                    .issubset(mcq)
+                    and len(mcq["options"]) == 4
+                    and mcq["answer"] in ["A", "B", "C", "D"]
+                ):
+                    # Deduplicate by question text
+                    if mcq["question"] not in {
+                        q["question"] for q in all_mcqs
+                    }:
+                        all_mcqs.append(mcq)
+            except json.JSONDecodeError:
+                continue
+
+        # If model can't produce new questions, stop early
+        if not objects:
+            break
+
+    return all_mcqs[:num_q]
