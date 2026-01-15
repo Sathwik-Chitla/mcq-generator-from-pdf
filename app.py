@@ -13,6 +13,13 @@ st.set_page_config(
 st.title("📘 RAG-Based MCQ Quiz Generator")
 st.caption("Difficulty-aware MCQs using RAG + HuggingFace Embeddings + Groq (Free APIs)")
 
+st.info(
+    "ℹ️ **Demo Notice:** This application uses **free-tier APIs** for embeddings and LLM inference. "
+    "It is intended **for demonstration and learning purposes only**. "
+    "Occasional latency, limited throughput, or variability in responses may occur."
+)
+
+
 # --------------------------------------------------
 # Sidebar
 # --------------------------------------------------
@@ -136,4 +143,5 @@ if st.session_state.submitted:
         st.divider()
 
     st.subheader(f"🎯 Final Score: {score} / {len(st.session_state.mcqs)}")
+
 
