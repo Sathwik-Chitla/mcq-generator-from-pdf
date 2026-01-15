@@ -145,10 +145,9 @@ def generate_mcqs(query, difficulty, num_q):
     context = retrieve_context(query)
 
     llm = ChatGroq(
-        model="llama3-70b-8192",
-        temperature=0
-    )
-
+    model="llama-3.1-8b-instant",
+    temperature=0
+)
     chain = PROMPT | llm | StrOutputParser()
 
     raw = chain.invoke({
@@ -175,3 +174,4 @@ def generate_mcqs(query, difficulty, num_q):
             continue
 
     return mcqs
+
