@@ -13,9 +13,10 @@ from langchain_core.output_parsers import StrOutputParser
 
 
 # =========================================================
-# API CLIENTS
+# HuggingFace Inference Client (FREE embeddings)
 # =========================================================
 HF_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
+
 hf_client = InferenceClient(
     model="sentence-transformers/all-MiniLM-L6-v2",
     token=HF_TOKEN
@@ -87,6 +88,7 @@ def load_pdf(file):
             if not content:
                 continue
 
+            # Heuristic table handling
             if content.count("  ") >= 2 or "\t" in content:
                 chunks.append("Table Fact: " + re.sub(r"\s+", " ", content))
             else:
@@ -96,12 +98,19 @@ def load_pdf(file):
 
 
 # =========================================================
-# EMBEDDINGS (HUGGINGFACE API)
+# EMBEDDINGS (CORRECT HF API USAGE)
 # =========================================================
 def embed_texts(texts):
-    # HF API supports batch embeddings
-    embeddings = hf_client.embeddings(texts)
-    return [e["embedding"] for e in embeddings]
+    """
+    Generate embeddings using HuggingFace Inference API.
+    HF does NOT support batch embeddings reliably on free tier,
+    so we embed one-by-one for stability.
+    """
+    vectors = []
+    for text in texts:
+        vec = hf_client.feature_extraction(text)
+        vectors.append(vec)
+    return vectors
 
 
 # =========================================================
@@ -119,7 +128,11 @@ def ingest_pdf_to_pinecone(chunks):
 # =========================================================
 def retrieve_context(query, k=4):
     query_vec = embed_texts([query])[0]
-    sims = cosine_similarity([query_vec], st.session_state.vectors)[0]
+
+    sims = cosine_similarity(
+        [query_vec],
+        st.session_state.vectors
+    )[0]
 
     top_idx = sims.argsort()[-k:][::-1]
     return "\n\n".join(st.session_state.chunks[i] for i in top_idx)
@@ -144,15 +157,21 @@ def generate_mcqs(query, difficulty, num_q):
         "difficulty": DIFF_RULES[difficulty]
     })
 
+    # Salvage valid JSON objects only
     objects = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
     mcqs = []
 
-    for o in objects:
+    for obj in objects:
         try:
-            mcq = json.loads(o)
-            if {"question", "options", "answer", "explanation"}.issubset(mcq):
+            mcq = json.loads(obj)
+            if (
+                {"question", "options", "answer", "explanation"}
+                .issubset(mcq)
+                and len(mcq["options"]) == 4
+                and mcq["answer"] in ["A", "B", "C", "D"]
+            ):
                 mcqs.append(mcq)
-        except:
-            pass
+        except json.JSONDecodeError:
+            continue
 
     return mcqs
