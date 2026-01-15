@@ -1,12 +1,14 @@
 import re
 import json
 import fitz
+import streamlit as st
 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 
 # =========================================================
@@ -92,22 +94,23 @@ def ingest_pdf_to_pinecone(text):
     )
     chunks = splitter.split_text(text)
 
-    embeddings = OpenAIEmbeddings()
-    vectorstore = FAISS.from_texts(chunks, embedding=embeddings)
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
 
-    return vectorstore
+    vectorstore = FAISS.from_texts(chunks, embedding=embeddings)
+    st.session_state.vectorstore = vectorstore
 
 
 # =========================================================
 # MCQ GENERATION
 # =========================================================
 def generate_mcqs(query, difficulty, num_q):
-    # vectorstore is rebuilt per upload (fine for demo)
-    context_docs = st.session_state.vectorstore.similarity_search(query, k=4)
-    context = "\n\n".join(d.page_content for d in context_docs)
+    docs = st.session_state.vectorstore.similarity_search(query, k=4)
+    context = "\n\n".join(d.page_content for d in docs)
 
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
+    llm = ChatGroq(
+        model="llama3-70b-8192",
         temperature=0
     )
 
