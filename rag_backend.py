@@ -1,6 +1,6 @@
 import os
-import re
 import json
+import re
 import fitz
 import streamlit as st
 
@@ -9,11 +9,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.output_parsers import JsonOutputParser
 
 
 # =========================================================
-# HuggingFace Embedding Client
+# Embeddings (HuggingFace – free)
 # =========================================================
 hf_client = InferenceClient(
     model="sentence-transformers/all-MiniLM-L6-v2",
@@ -21,65 +21,51 @@ hf_client = InferenceClient(
 )
 
 
+def embed_texts(texts):
+    return [hf_client.feature_extraction(t) for t in texts]
+
+
 # =========================================================
-# Difficulty Configuration (REAL EFFECT)
+# Difficulty config (REAL effect)
 # =========================================================
 DIFFICULTY_CONFIG = {
-    "Easy": {
-        "retrieval_k": 2,
-        "instruction": """
-Ask definition-based or direct factual questions.
-Answers must be explicitly stated in one place.
-Avoid reasoning or comparisons.
-"""
-    },
-    "Medium": {
-        "retrieval_k": 4,
-        "instruction": """
-Ask conceptual or comparison-based questions.
-Test understanding across nearby statements.
-Avoid multi-step reasoning.
-"""
-    },
-    "Hard": {
-        "retrieval_k": 6,
-        "instruction": """
-Ask application or implication-based questions.
-Each question must combine at least TWO facts.
-Avoid surface-level recall.
-"""
-    }
+    "Easy": {"retrieval_k": 6},
+    "Medium": {"retrieval_k": 10},
+    "Hard": {"retrieval_k": 14},
 }
 
 
 # =========================================================
-# Prompt (ENFORCES QUESTION COUNT)
+# Prompt (topic + exact count enforced)
 # =========================================================
 PROMPT = PromptTemplate(
-    input_variables=["context", "num_q", "difficulty_instruction"],
+    input_variables=["context", "topic", "num_q", "difficulty"],
     template="""
-You are an expert instructor creating assessment-quality MCQs.
-
-DIFFICULTY RULES:
-{difficulty_instruction}
+You are an expert instructor.
 
 TASK:
-Generate EXACTLY {num_q} UNIQUE MCQs from the study material below.
-If fewer than {num_q} are possible, generate as many as you can.
+Generate EXACTLY {num_q} UNIQUE MCQs about the topic:
+"{topic}"
 
-STRICT RULES:
-- Use ONLY the study material
-- Each question must test a DIFFERENT concept
-- Do NOT repeat questions
+DIFFICULTY:
+{difficulty}
+
+RULES:
+- Every question MUST be directly related to the topic
+- Use ONLY the provided study material
+- Each question must test a DIFFERENT idea
+- Do NOT repeat concepts
 - Do NOT invent facts
 
-OUTPUT ONLY JSON:
+Return VALID JSON only.
+
+FORMAT:
 [
   {{
     "question": "...",
     "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
     "answer": "A",
-    "explanation": "Explain using evidence from the material"
+    "explanation": "Explain using the material"
   }}
 ]
 
@@ -90,16 +76,15 @@ STUDY MATERIAL:
 
 
 # =========================================================
-# PDF Loader
+# PDF loader
 # =========================================================
 def load_pdf(file):
     doc = fitz.open(stream=file.read(), filetype="pdf")
     chunks = []
 
     for page in doc:
-        blocks = page.get_text("blocks")
-        for b in blocks:
-            text = b[4].strip()
+        for block in page.get_text("blocks"):
+            text = block[4].strip()
             if text:
                 chunks.append(re.sub(r"\s+", " ", text))
 
@@ -107,18 +92,7 @@ def load_pdf(file):
 
 
 # =========================================================
-# Embeddings (HF Inference API)
-# =========================================================
-def embed_texts(texts):
-    vectors = []
-    for text in texts:
-        vec = hf_client.feature_extraction(text)
-        vectors.append(vec)
-    return vectors
-
-
-# =========================================================
-# Ingest PDF (RESET-SAFE)
+# Ingest
 # =========================================================
 def ingest_pdf(chunks):
     st.session_state.chunks = chunks
@@ -126,69 +100,53 @@ def ingest_pdf(chunks):
 
 
 # =========================================================
-# Retrieve Context
+# Retrieval
 # =========================================================
-def retrieve_context(query, k):
-    q_vec = embed_texts([query])[0]
-
-    sims = cosine_similarity(
-        [q_vec],
-        st.session_state.vectors
-    )[0]
+def retrieve_context(topic, k):
+    q_vec = embed_texts([topic])[0]
+    sims = cosine_similarity([q_vec], st.session_state.vectors)[0]
 
     top_idx = sims.argsort()[-k:][::-1]
     return "\n\n".join(st.session_state.chunks[i] for i in top_idx)
 
 
 # =========================================================
-# MCQ Generation (RESPECTS num_q)
+# MCQ generation (THIS IS THE KEY FIX)
 # =========================================================
 def generate_mcqs(query, difficulty, num_q):
     cfg = DIFFICULTY_CONFIG[difficulty]
+    context = retrieve_context(query, cfg["retrieval_k"])
 
     llm = ChatGroq(
         model="llama-3.1-8b-instant",
         temperature=0
     )
 
-    all_mcqs = []
-    attempts = 0
-    max_attempts = 3  # prevents infinite loops
+    parser = JsonOutputParser()
 
-    while len(all_mcqs) < num_q and attempts < max_attempts:
-        attempts += 1
+    chain = PROMPT | llm | parser
 
-        context = retrieve_context(query, cfg["retrieval_k"])
-
-        chain = PROMPT | llm | StrOutputParser()
-
-        raw = chain.invoke({
+    try:
+        mcqs = chain.invoke({
             "context": context,
-            "num_q": num_q - len(all_mcqs),
-            "difficulty_instruction": cfg["instruction"]
+            "topic": query,
+            "num_q": num_q,
+            "difficulty": difficulty
         })
+    except Exception:
+        return []
 
-        objects = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
+    # Final safety filter
+    valid = []
+    seen = set()
 
-        for obj in objects:
-            try:
-                mcq = json.loads(obj)
-                if (
-                    {"question", "options", "answer", "explanation"}
-                    .issubset(mcq)
-                    and len(mcq["options"]) == 4
-                    and mcq["answer"] in ["A", "B", "C", "D"]
-                ):
-                    # Deduplicate by question text
-                    if mcq["question"] not in {
-                        q["question"] for q in all_mcqs
-                    }:
-                        all_mcqs.append(mcq)
-            except json.JSONDecodeError:
-                continue
+    for q in mcqs:
+        if (
+            isinstance(q, dict)
+            and {"question", "options", "answer", "explanation"}.issubset(q)
+            and q["question"] not in seen
+        ):
+            seen.add(q["question"])
+            valid.append(q)
 
-        # If model can't produce new questions, stop early
-        if not objects:
-            break
-
-    return all_mcqs[:num_q]
+    return valid[:num_q]
