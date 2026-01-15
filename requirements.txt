@@ -3,6 +3,6 @@ pymupdf
 langchain
 langchain-core
 langchain-text-splitters
-langchain-openai
+langchain-community
+langchain-groq
 faiss-cpu
-langchain_community
