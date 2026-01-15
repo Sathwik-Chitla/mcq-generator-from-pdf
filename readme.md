@@ -7,11 +7,13 @@ Built with **Streamlit**, **LangChain**, **Groq LLaMA-3.1**, and **Hugging Face 
 👉 https://mcq-generator-from-pdf-2.streamlit.app/
 
 
-[](assests/Screenshot-1.png)
+![](assests/Screenshot-1.png)
 
-[](assests/Screenshot-2.png)
 
-[](assests/Screenshot-3.png)
+![](assests/Screenshot-2.png)
+
+
+![](assests/Screenshot-3.png)
 
 
 ---
@@ -139,6 +141,7 @@ https://mcq-generator-from-pdf-2.streamlit.app/
 - Export quiz as PDF / JSON
 
 - User authentication and quiz history
+
 
 
 
