@@ -6,6 +6,14 @@ Built with **Streamlit**, **LangChain**, **Groq LLaMA-3.1**, and **Hugging Face 
 🔗 **Live Demo:**  
 👉 https://mcq-generator-from-pdf-2.streamlit.app/
 
+
+[](assests/Screenshot-1.png)
+
+[](assests/Screenshot-2.png)
+
+[](assests/Screenshot-3.png)
+
+
 ---
 
 ## 🚀 Features
@@ -18,7 +26,8 @@ Built with **Streamlit**, **LangChain**, **Groq LLaMA-3.1**, and **Hugging Face 
 - ✅ Automated scoring with detailed explanations  
 - 🔁 Session-safe handling to prevent question repetition across documents  
 - ⚡ Low-latency, real-time interaction  
-- ☁️ Fully deployed on Streamlit Community Cloud  
+- ☁️ Fully deployed on Streamlit Community Cloud
+
 
 ---
 
@@ -130,6 +139,7 @@ https://mcq-generator-from-pdf-2.streamlit.app/
 - Export quiz as PDF / JSON
 
 - User authentication and quiz history
+
 
 
 
