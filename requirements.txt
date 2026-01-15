@@ -2,7 +2,6 @@ streamlit
 pymupdf
 langchain
 langchain-core
-langchain-text-splitters
-langchain-community
 langchain-groq
-faiss-cpu
+huggingface_hub
+scikit-learn
