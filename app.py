@@ -1,5 +1,5 @@
 import streamlit as st
-from rag_backend import load_pdf, ingest_pdf_to_pinecone, generate_mcqs
+from rag_backend import load_pdf, ingest_pdf, generate_mcqs
 
 # --------------------------------------------------
 # Page Config
@@ -68,7 +68,7 @@ if generate_btn:
         if not st.session_state.pdf_ingested:
             with st.spinner("Processing PDF and building knowledge base..."):
                 chunks = load_pdf(pdf)
-                ingest_pdf_to_pinecone(chunks)
+                ingest_pdf(chunks)
                 st.session_state.pdf_ingested = True
 
         with st.spinner("Generating MCQs..."):
@@ -136,3 +136,4 @@ if st.session_state.submitted:
         st.divider()
 
     st.subheader(f"🎯 Final Score: {score} / {len(st.session_state.mcqs)}")
+
