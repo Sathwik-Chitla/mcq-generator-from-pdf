@@ -12,9 +12,6 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
 
-# =========================================================
-# Embeddings (HuggingFace – free)
-# =========================================================
 hf_client = InferenceClient(
     model="sentence-transformers/all-MiniLM-L6-v2",
     token=os.getenv("HUGGINGFACE_API_TOKEN")
@@ -25,9 +22,6 @@ def embed_texts(texts):
     return [hf_client.feature_extraction(t) for t in texts]
 
 
-# =========================================================
-# Difficulty config (REAL effect)
-# =========================================================
 DIFFICULTY_CONFIG = {
     "Easy": {"retrieval_k": 6},
     "Medium": {"retrieval_k": 10},
@@ -35,9 +29,6 @@ DIFFICULTY_CONFIG = {
 }
 
 
-# =========================================================
-# Prompt (topic + exact count enforced)
-# =========================================================
 PROMPT = PromptTemplate(
     input_variables=["context", "topic", "num_q", "difficulty"],
     template="""
@@ -61,12 +52,12 @@ Return VALID JSON only.
 
 FORMAT:
 [
-  {{
+  {
     "question": "...",
     "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
     "answer": "A",
     "explanation": "Explain using the material"
-  }}
+  }
 ]
 
 STUDY MATERIAL:
@@ -75,9 +66,6 @@ STUDY MATERIAL:
 )
 
 
-# =========================================================
-# PDF loader
-# =========================================================
 def load_pdf(file):
     doc = fitz.open(stream=file.read(), filetype="pdf")
     chunks = []
@@ -91,17 +79,11 @@ def load_pdf(file):
     return chunks
 
 
-# =========================================================
-# Ingest
-# =========================================================
 def ingest_pdf(chunks):
     st.session_state.chunks = chunks
     st.session_state.vectors = embed_texts(chunks)
 
 
-# =========================================================
-# Retrieval
-# =========================================================
 def retrieve_context(topic, k):
     q_vec = embed_texts([topic])[0]
     sims = cosine_similarity([q_vec], st.session_state.vectors)[0]
@@ -110,9 +92,6 @@ def retrieve_context(topic, k):
     return "\n\n".join(st.session_state.chunks[i] for i in top_idx)
 
 
-# =========================================================
-# MCQ generation (THIS IS THE KEY FIX)
-# =========================================================
 def generate_mcqs(query, difficulty, num_q):
     cfg = DIFFICULTY_CONFIG[difficulty]
     context = retrieve_context(query, cfg["retrieval_k"])
@@ -136,7 +115,6 @@ def generate_mcqs(query, difficulty, num_q):
     except Exception:
         return []
 
-    # Final safety filter
     valid = []
     seen = set()
 
