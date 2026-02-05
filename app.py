@@ -1,9 +1,6 @@
 import streamlit as st
 from rag_backend import load_pdf, ingest_pdf, generate_mcqs
 
-# --------------------------------------------------
-# Page Config
-# --------------------------------------------------
 st.set_page_config(
     page_title="RAG MCQ Quiz Generator",
     page_icon="📘",
@@ -19,10 +16,6 @@ st.info(
     "Occasional latency, limited throughput, or variability in responses may occur."
 )
 
-
-# --------------------------------------------------
-# Sidebar
-# --------------------------------------------------
 with st.sidebar:
     st.header("⚙️ Quiz Settings")
 
@@ -47,9 +40,6 @@ with st.sidebar:
 
     generate_btn = st.button("🚀 Generate Quiz")
 
-# --------------------------------------------------
-# Session State Initialization
-# --------------------------------------------------
 if "mcqs" not in st.session_state:
     st.session_state.mcqs = []
 
@@ -62,16 +52,12 @@ if "submitted" not in st.session_state:
 if "pdf_ingested" not in st.session_state:
     st.session_state.pdf_ingested = False
 
-# --------------------------------------------------
-# Generate Quiz
-# --------------------------------------------------
 if generate_btn:
     if not pdf:
         st.warning("Please upload a PDF.")
     elif not topic.strip():
         st.warning("Please enter a topic.")
     else:
-        # Ingest PDF only once per upload
         if not st.session_state.pdf_ingested:
             with st.spinner("Processing PDF and building knowledge base..."):
                 chunks = load_pdf(pdf)
@@ -93,9 +79,6 @@ if generate_btn:
         else:
             st.error("No MCQs generated. Try a different topic.")
 
-# --------------------------------------------------
-# Quiz Display
-# --------------------------------------------------
 if st.session_state.mcqs and not st.session_state.submitted:
     st.header("📝 Quiz")
 
@@ -118,9 +101,6 @@ if st.session_state.mcqs and not st.session_state.submitted:
             on_click=lambda: st.session_state.update({"submitted": True})
         )
 
-# --------------------------------------------------
-# Results
-# --------------------------------------------------
 if st.session_state.submitted:
     st.header("📊 Results")
     score = 0
@@ -143,5 +123,3 @@ if st.session_state.submitted:
         st.divider()
 
     st.subheader(f"🎯 Final Score: {score} / {len(st.session_state.mcqs)}")
-
-
